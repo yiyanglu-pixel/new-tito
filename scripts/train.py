@@ -10,7 +10,7 @@ from torch_geometric.loader import DataLoader as GeometricDataLoader
 
 
 from tito import DEVICE
-from tito.utils.data import get_dataset
+from tito.utils.data import get_condition_names, get_condition_scales, get_dataset
 import tito.models.model as model
 import tito.models.velocity as velocity
 from tito.mlops import get_wandb_logger, get_profiler
@@ -72,7 +72,9 @@ def train_model(args):
         print("Creating new model ...")
         vf = velocity.PainnCondVelocity(n_features=args.n_features, model_layers=args.n_model_layers, 
                                         embedding_layers=args.n_embedding_layers, length_scale=args.length_scale,
-                                        n_reduced_features=args.n_reduced_features, max_lag=args.max_lag)
+                                        n_reduced_features=args.n_reduced_features, max_lag=args.max_lag,
+                                        condition_names=get_condition_names(args),
+                                        condition_scales=get_condition_scales(args))
         cfm = model.CFM(vf, lr=args.learning_rate)
 
     wandblogger = get_wandb_logger(args, num_workers=num_workers)
@@ -125,6 +127,12 @@ def main():
     parser.add_argument("--save_freq", type=int, default=30, help="Frequency of saving the model in minutes.")
     parser.add_argument('--num_workers', type=int, help="Number workers (GPU Training only).")
     parser.add_argument('--no_ot', action='store_true', help='Disable optimal transport')
+    parser.add_argument('--condition_temperature', action='store_true', help='Condition the model on temperature.')
+    parser.add_argument('--temperature', type=float, default=300.0, help='Temperature condition value in kelvin.')
+    parser.add_argument('--temperature_reference', type=float, default=300.0, help='Temperature scale for positional encoding.')
+    parser.add_argument('--condition_pressure', action='store_true', help='Condition the model on pressure.')
+    parser.add_argument('--pressure', type=float, default=1.0, help='Pressure condition value.')
+    parser.add_argument('--pressure_reference', type=float, default=1.0, help='Pressure scale for positional encoding.')
 
     args = parser.parse_args()
     args.mode = "train"  #for compatibility with the dataset loading function

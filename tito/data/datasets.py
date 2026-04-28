@@ -166,6 +166,8 @@ class LaggedDatasetMixin:
         
 
         item = {"cond": data0, "target": datat, "lag": torch.Tensor([lag])}
+        for name, value in getattr(self, "thermodynamic_conditions", {}).items():
+            item[name] = torch.tensor([value], dtype=torch.float32)
         return self.transform(item)
 
 

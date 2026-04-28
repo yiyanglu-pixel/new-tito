@@ -13,17 +13,23 @@ python scripts/train.py --dataset <mdqm9 or timewarp> --data_path <path to datas
 ```
 
 ## Installation
-For the environment installation, first create an environment with python 3.11:
- ```
-mamba create -n tito python=3.11
-  ```
-Then run:
+Create an isolated conda environment:
+```bash
+conda env create -f environment.yml
+conda activate tito
 ```
-  mamba activate tito
-  uv pip install -e .
-  uv pip install torch==2.5.0 --index-url https://download.pytorch.org/whl/cu121
-  uv pip install torch_scatter torch_sparse torch_cluster -f https://data.pyg.org/whl/torch-2.5.0+cu121.html
-  uv pip install lightning torch_geometric
+
+Install the CUDA 12.1 PyTorch and PyG wheels, then install this package:
+```bash
+uv pip install -r requirements-cuda121.txt
+uv pip install -e .
+```
+
+Validate the environment:
+```bash
+python -c "import torch, tito; print(torch.__version__, torch.cuda.is_available(), tito.DEVICE)"
+python scripts/train.py --help
+python scripts/sample.py --help
 ```
 
 ## Dataset pre-processing
@@ -47,4 +53,3 @@ This repository contains code to reproduce the results from:
   copyright = {Creative Commons Attribution 4.0 International}
 }
 ```
-

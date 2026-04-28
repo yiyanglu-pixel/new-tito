@@ -20,8 +20,15 @@ class PainnCondVelocity(device.Module):
         length_scale=10.0,
         n_reduced_features=0,
         temperature=False,
+        condition_names=None,
+        condition_scales=None,
     ):
         super().__init__()
+        condition_names = list(condition_names or [])
+        if temperature and "temperature" not in condition_names:
+            condition_names.insert(0, "temperature")
+        condition_scales = self._normalize_condition_scales(condition_names, condition_scales)
+
         self.config = {"n_features": n_features, 
                        "cutoff": cutoff, 
                        "virtual_node": virtual_node,
@@ -31,12 +38,16 @@ class PainnCondVelocity(device.Module):
                        "length_scale": length_scale,
                        "n_reduced_features": n_reduced_features,
                        "temperature": temperature,
+                       "condition_names": condition_names,
+                       "condition_scales": condition_scales,
                        }
 
         self.cutoff = cutoff
         self.virtual_node = virtual_node
 
         self.temperature = temperature
+        self.condition_names = tuple(condition_names)
+        self.condition_scales = condition_scales
         self.embed = torch.nn.Sequential(
             graph.AddSpatialFeatures(),
             embedding.NodeEmbedding(n_features=n_features),
@@ -50,15 +61,15 @@ class PainnCondVelocity(device.Module):
             ),
         )
 
-        n_invariant_features = 3 + (1 if temperature else 0)
+        n_invariant_features = 3 + len(self.condition_names)
+        condition_embeddings = [
+            embedding.PositionalEmbedding(name, n_features, self.condition_scales[name])
+            for name in self.condition_names
+        ]
         self.score = torch.nn.Sequential(
             graph.AddSpatialFeatures(),
             embedding.PositionalEmbedding("t_diff", n_features, 1),
-            (
-                embedding.PositionalEmbedding("temperature", n_features, 1)
-                if temperature
-                else torch.nn.Identity()
-            ),
+            *condition_embeddings,
             embedding.PositionalEmbedding("lag", n_features, max_lag),
             embedding.CombineInvariantFeatures(n_invariant_features * n_features, n_features),
             painn.Painn(
@@ -78,6 +89,30 @@ class PainnCondVelocity(device.Module):
 
         self.timer = timer.Timer()
 
+    @staticmethod
+    def _normalize_condition_scales(condition_names, condition_scales):
+        if condition_scales is None:
+            return {name: 1.0 for name in condition_names}
+        if isinstance(condition_scales, (list, tuple)):
+            if len(condition_scales) != len(condition_names):
+                raise ValueError("condition_scales must have the same length as condition_names.")
+            condition_scales = dict(zip(condition_names, condition_scales))
+
+        normalized = {}
+        for name in condition_names:
+            scale = float(condition_scales.get(name, 1.0))
+            if scale <= 0:
+                raise ValueError(f"Scale for condition {name} must be positive.")
+            normalized[name] = scale
+        return normalized
+
+    def _condition_names(self):
+        if hasattr(self, "condition_names"):
+            return tuple(self.condition_names)
+        if getattr(self, "temperature", False):
+            return ("temperature",)
+        return ()
+
     def preprocess(self, batch):
         if self.virtual_node:
             #  assert utils.is_centered(batch["cond"])
@@ -95,13 +130,17 @@ class PainnCondVelocity(device.Module):
         edge_index, edge_type = self.get_edge_index(corr, cond) 
 
         batch_idx = cond.batch
-        corr.lag = batch["lag"][batch_idx].squeeze()
+        corr.lag = batch["lag"][batch_idx].reshape(-1)
         corr.t_diff = t[batch["cond"].batch] #batch["t_diff"][batch_idx].squeeze()
 
-        if not hasattr(self, "temperature"):
-            self.temperature = False
-        if self.temperature:
-            corr.temperature = batch["temperature"][batch_idx].squeeze()
+        for condition_name in self._condition_names():
+            if condition_name not in batch:
+                raise KeyError(
+                    f"Missing condition '{condition_name}' in batch. "
+                    f"Enable it in the data pipeline or provide --condition_{condition_name}."
+                )
+            condition_value = batch[condition_name].to(corr.x.device, dtype=corr.x.dtype)
+            corr[condition_name] = condition_value[batch_idx].reshape(-1)
 
         cond.edge_index = edge_index
         cond.edge_type = edge_type

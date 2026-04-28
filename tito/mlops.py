@@ -60,6 +60,12 @@ def get_wandb_logger(args, num_workers=0):
                 "multigpu": args.multigpu,
                 "num_workers": num_workers,
                 "distinguish_atoms": args.distinguish_atoms,
+                "condition_temperature": getattr(args, "condition_temperature", False),
+                "temperature": getattr(args, "temperature", None),
+                "temperature_reference": getattr(args, "temperature_reference", None),
+                "condition_pressure": getattr(args, "condition_pressure", False),
+                "pressure": getattr(args, "pressure", None),
+                "pressure_reference": getattr(args, "pressure_reference", None),
             },
             log_model="all",
         )

@@ -1,0 +1,12 @@
+--index-url https://download.pytorch.org/whl/cu121
+--extra-index-url https://pypi.org/simple
+torch==2.5.0
+
+--find-links https://data.pyg.org/whl/torch-2.5.0+cu121.html
+torch_scatter
+torch_sparse
+torch_cluster
+
+lightning
+torch_geometric
+pytorch_lightning

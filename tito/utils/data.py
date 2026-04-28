@@ -12,6 +12,74 @@ from tito.utils.utils import sample_to_batch
 from tito import utils
 import tito.mlops as mlops 
 
+
+THERMODYNAMIC_CONDITIONS = ("temperature", "pressure")
+
+
+def get_condition_names(args):
+    condition_names = []
+    if getattr(args, "condition_temperature", False):
+        condition_names.append("temperature")
+    if getattr(args, "condition_pressure", False):
+        condition_names.append("pressure")
+    return condition_names
+
+
+def get_condition_scales(args):
+    scales = {}
+    for name in get_condition_names(args):
+        scale = float(getattr(args, f"{name}_reference", 1.0))
+        if scale <= 0:
+            raise ValueError(f"{name}_reference must be positive.")
+        scales[name] = scale
+    return scales
+
+
+def get_condition_values(args):
+    values = {}
+    for name in get_condition_names(args):
+        values[name] = float(getattr(args, name))
+    return values
+
+
+def attach_thermodynamic_conditions(dataset, args):
+    conditions = get_condition_values(args)
+    if conditions:
+        dataset.thermodynamic_conditions = conditions
+    return dataset
+
+
+def add_thermodynamic_conditions_to_batch(batch, args):
+    conditions = get_condition_values(args)
+    if not conditions:
+        return batch
+
+    n_graphs = int(batch["lag"].shape[0])
+    dtype = batch["cond"].x.dtype
+    device = batch["cond"].x.device
+    for name, value in conditions.items():
+        batch[name] = torch.full((n_graphs, 1), value, dtype=dtype, device=device)
+    return batch
+
+
+def resolve_base_density_std(args, batch):
+    base_std = float(getattr(args, "base_density_std", 1.0))
+    scaling = getattr(args, "base_density_scaling", "fixed")
+    if scaling == "fixed":
+        return base_std
+    if scaling != "flory":
+        raise ValueError(f"Unknown base density scaling: {scaling}")
+
+    reference_size = getattr(args, "base_density_reference_size", None)
+    if reference_size is None or reference_size <= 0:
+        raise ValueError("--base_density_reference_size must be positive when using Flory scaling.")
+
+    graph_sizes = torch.bincount(batch["cond"].batch).float()
+    system_size = float(graph_sizes.mean().item())
+    exponent = float(getattr(args, "base_density_size_power", 0.688))
+    return base_std * (system_size / float(reference_size)) ** exponent
+
+
 def get_dataset(args):
     datasets = {
         "mdqm9": data.mdqm9.LaggedMDQM9,
@@ -29,7 +97,7 @@ def get_dataset(args):
         else:
             dataset = dataset_class(path=args.data_path, sub_data_set=args.sub_data_set, max_lag=args.lag, lazy_load=True, normalize=True, fixed_lag=args.lag, 
                 uniform=False, split=args.split, ot_coupling=ot_coupling)
-        return dataset
+        return attach_thermodynamic_conditions(dataset, args)
         
     else:
         uniform_lag = not args.no_uniform_lag if hasattr(args, 'no_uniform_lag') else True
@@ -50,7 +118,7 @@ def get_dataset(args):
             val_dataset = dataset_class(path=args.data_path, max_lag=args.max_lag, lazy_load=True, normalize=True,  fixed_lag=False, 
                 uniform=uniform_lag, split="val", sub_sampling_indices_path=val_indices_path, ot_coupling=ot_coupling) 
 
-        return train_dataset, val_dataset
+        return attach_thermodynamic_conditions(train_dataset, args), attach_thermodynamic_conditions(val_dataset, args)
 
 def get_base_dataset(args):
     datasets = {
@@ -98,8 +166,8 @@ def get_batch(args, dataset, i_mol):
     base_samples = dataset.basedistribution.sample_as(batch["cond"].x)
     
     batch["corr"].x = base_samples
-    
-    return batch
+
+    return add_thermodynamic_conditions_to_batch(batch, args)
 
 def re_scale_samples(batch, dataset):
     """
@@ -207,8 +275,8 @@ def build_custom_initial_condition_batch(args, dataset):
     base_samples = dataset.basedistribution.sample_as(batch["cond"].x)
     
     batch["corr"].x = base_samples
-    
-    return batch
+
+    return add_thermodynamic_conditions_to_batch(batch, args)
     
 def traj_to_pdb(trajs, mol, dataset, filename):
     """
@@ -217,4 +285,3 @@ def traj_to_pdb(trajs, mol, dataset, filename):
 
     top = rdkit_to_mdtraj_topology(mol)
     md.Trajectory(trajs, top).save(filename)
-    

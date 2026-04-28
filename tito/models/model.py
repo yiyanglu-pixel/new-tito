@@ -66,15 +66,30 @@ class CFM(pl.pytorch.LightningModule):
     def compute_conditional_vector_field(self, x0, x1):
         return x1 - x0
 
-    def sample(self, batch, ode_steps=50, nested_samples=1, base_distribution=BaseDensity(std=1.0)):
+    def sample(
+        self,
+        batch,
+        ode_steps=50,
+        nested_samples=1,
+        base_distribution=BaseDensity(std=1.0),
+        ode_solver="euler",
+        center_each_step=True,
+        max_step_displacement=None,
+    ):
         self.eval()
         with torch.no_grad():
+            if ode_steps <= 0:
+                raise ValueError("ode_steps must be positive.")
+            ode_solver = ode_solver.lower()
+            if ode_solver not in {"euler", "heun"}:
+                raise ValueError("ode_solver must be 'euler' or 'heun'.")
+
             device = next(self.parameters()).device
             sh = SampleHandler(self._forward)
             self.score.eval()
             #self.score.training = False
             
-            x0 = batch['corr'].x
+            x0 = batch['corr'].x.clone()
             dt = 1.0 / ode_steps
             traj = [batch['cond'].x.clone()]
 
@@ -82,9 +97,19 @@ class CFM(pl.pytorch.LightningModule):
                 #print(f'Sampling nested step {i_nested+1}/{nested_samples}...')
                 for i_ode in range(ode_steps): # simple Forward Euler solver
                     #print(f'Sampling step {i_ode}...', end='\r')
-                    t = torch.Tensor([i_ode]) * dt
-                    t = t.to(device)
-                    x0 = x0 + dt*sh(t, batch)
+                    t = torch.tensor([i_ode], dtype=x0.dtype, device=device) * dt
+                    t_next = torch.tensor([i_ode + 1], dtype=x0.dtype, device=device) * dt
+                    x0 = self._ode_step(
+                        sh,
+                        t,
+                        t_next,
+                        batch,
+                        x0,
+                        dt,
+                        ode_solver=ode_solver,
+                        center_each_step=center_each_step,
+                        max_step_displacement=max_step_displacement,
+                    )
                     batch['corr'].x = x0
                 traj.append(x0.clone())
                 batch["cond"].x = x0.clone() # update condition with last step
@@ -98,6 +123,45 @@ class CFM(pl.pytorch.LightningModule):
             batch["traj"].x = torch.stack(traj, dim=0) # store trajectory
             print("Done!")
             return batch
+
+    def _ode_step(
+        self,
+        sample_handler,
+        t,
+        t_next,
+        batch,
+        x,
+        dt,
+        ode_solver,
+        center_each_step,
+        max_step_displacement,
+    ):
+        batch["corr"].x = x
+        if ode_solver == "euler":
+            delta = dt * sample_handler(t, batch)
+        else:
+            v0 = sample_handler(t, batch)
+            proposal = x + dt * v0
+            batch["corr"].x = proposal
+            v1 = sample_handler(t_next, batch)
+            delta = 0.5 * dt * (v0 + v1)
+
+        delta = self._clip_step(delta, max_step_displacement)
+        x_next = x + delta
+        if center_each_step:
+            x_next = utils.center_coordinates_batch(x_next, batch["corr"].batch)
+        return x_next
+
+    @staticmethod
+    def _clip_step(delta, max_step_displacement):
+        if max_step_displacement is None:
+            return delta
+        if max_step_displacement <= 0:
+            raise ValueError("max_step_displacement must be positive when provided.")
+
+        norm = delta.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+        scale = torch.clamp(max_step_displacement / norm, max=1.0)
+        return delta * scale
     
 class SampleHandler:
     def __init__(self, sample_forward):
