@@ -54,7 +54,6 @@ def get_dataset(args):
 
 def get_base_dataset(args):
     datasets = {
-        "ala2": data.ala2.ALA2Base,
         "mdqm9": data.mdqm9.MDQM9Base,
         "timewarp": data.timewarp.TimewarpBase,
     }
@@ -62,7 +61,7 @@ def get_base_dataset(args):
         raise ValueError(f"Dataset {args.data_set} not supported. Choose from {list(datasets.keys())}.")
     dataset_class = datasets[args.data_set]
 
-    dataset = dataset_class(path=None, sub_data_set=args.sub_data_set, split=args.split, normalize=False, lazy_load=True) #inference
+    dataset = dataset_class(path=args.data_path, sub_data_set=args.sub_data_set, split=args.split, normalize=False, lazy_load=True) #inference
     return dataset
 
 def get_batch(args, dataset, i_mol):
@@ -89,14 +88,13 @@ def get_batch(args, dataset, i_mol):
 
     cond_batch = Batch.from_data_list([item["cond"] for item in samples])
     lag_batch = torch.cat([item["lag"] for item in samples])
-    lag_batch = lag_batch.unsqueeze(1)  
+    lag_batch = lag_batch.unsqueeze(1)
     batch = {"cond": cond_batch, "lag": lag_batch}
 
     batch["corr"] = batch['cond'].clone()
     #base_samples = torch.normal(0, 1, size=batch["cond"].x.shape) #add samples from the base distribution, this could be improved
     #base_samples = center_coordinates_batch(base_samples, batch["cond"].batch) 
     base_samples = dataset.basedistribution.sample_as(batch["cond"].x)
-    
     batch["corr"].x = base_samples
     
     return batch
@@ -205,11 +203,11 @@ def build_custom_initial_condition_batch(args, dataset):
 
     batch["corr"] = batch['cond'].clone()
     base_samples = dataset.basedistribution.sample_as(batch["cond"].x)
-    
+
     batch["corr"].x = base_samples
-    
+
     return batch
-    
+
 def traj_to_pdb(trajs, mol, dataset, filename):
     """
     Convert a batch of data to a PDB file.
@@ -217,4 +215,3 @@ def traj_to_pdb(trajs, mol, dataset, filename):
 
     top = rdkit_to_mdtraj_topology(mol)
     md.Trajectory(trajs, top).save(filename)
-    

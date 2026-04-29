@@ -23,13 +23,13 @@ class CFM(pl.pytorch.LightningModule):
     def training_step(self, batch, batch_idx):
         t = torch.rand(len(batch['cond'])).type_as(batch['cond'].x)
         loss = self.get_loss(t, batch)
-        self.log("train/loss", loss, prog_bar=True)
+        self.log("train/loss", loss, prog_bar=True, sync_dist=True, batch_size=batch["cond"].num_graphs)
         return loss
     
     def validation_step(self, batch, batch_idx):
         t = torch.rand(len(batch['cond'])).type_as(batch['cond'].x)
         loss = self.get_loss(t, batch)
-        self.log("val/loss", loss, prog_bar=True)
+        self.log("val/loss", loss, prog_bar=True, sync_dist=True, batch_size=batch["cond"].num_graphs)
         return loss            
 
     def configure_optimizers(self):

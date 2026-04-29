@@ -6,19 +6,18 @@ from huggingface_hub import hf_hub_download, list_repo_files
 def download_files(repo_id, subfolder, local_dir):
     all_files = list_repo_files(repo_id, repo_type="dataset")
     files_to_download = [file for file in all_files if file.startswith(subfolder)]
+    os.makedirs(local_dir, exist_ok=True)
 
     for i, file in enumerate(files_to_download):
-        local_path = os.path.join(local_dir)
-        os.makedirs(os.path.dirname(local_path), exist_ok=True)
         hf_hub_download(repo_id, filename=file, local_dir=local_dir, repo_type="dataset")
-        print(f"{i} / {len(files_to_download)} Downloaded {file} to {local_path}")
+        print(f"{i} / {len(files_to_download)} Downloaded {file} to {local_dir}")
 
 
 def main(args):
 
     repo_id = "microsoft/timewarp"
     subfolder = args.dataset
-    local_dir = "storage/timewarp"
+    local_dir = args.local_dir
 
     download_files(repo_id, subfolder, local_dir)
 
@@ -28,6 +27,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default="4AA-large")
+    parser.add_argument("--local_dir", type=str, default="datasets/timewarp/raw")
     args = parser.parse_args()
 
     main(args)

@@ -1,6 +1,7 @@
 import argparse
 from datetime import timedelta
 import os
+import time
 
 import numpy as np
 import torch
@@ -15,6 +16,109 @@ import tito.models.model as model
 import tito.models.velocity as velocity
 from tito.mlops import get_wandb_logger, get_profiler
 import tito.mlops as mlops 
+
+
+class TrainingProgressLogger(pl.Callback):
+    def __init__(self, every_n_steps=1):
+        self.every_n_steps = max(1, every_n_steps)
+
+    @staticmethod
+    def _total_batches(total):
+        if isinstance(total, (list, tuple)):
+            return sum(x for x in total if isinstance(x, int))
+        return total
+
+    @staticmethod
+    def _format_loss(value):
+        if value is None:
+            return "loss=NA"
+        if isinstance(value, dict):
+            value = value.get("loss")
+        if torch.is_tensor(value):
+            value = value.detach().float().mean().item()
+        try:
+            return f"loss={float(value):.6g}"
+        except (TypeError, ValueError):
+            return "loss=NA"
+
+    @staticmethod
+    def _format_duration(seconds):
+        seconds = max(0, int(seconds))
+        hours, remainder = divmod(seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        if hours:
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        return f"{minutes:02d}:{seconds:02d}"
+
+    def _format_timing(self, started_at, step, total):
+        if not started_at or step <= 0:
+            return "elapsed=00:00 rate=NA eta=NA"
+        elapsed = time.monotonic() - started_at
+        rate = step / max(elapsed, 1e-9)
+        eta = (total - step) / rate if isinstance(total, int) and total > step and rate > 0 else 0
+        return (
+            f"elapsed={self._format_duration(elapsed)} "
+            f"rate={rate:.2f}batch/s "
+            f"eta={self._format_duration(eta)}"
+        )
+
+    def _print(self, trainer, message):
+        if trainer.is_global_zero:
+            print(message, flush=True)
+
+    def on_train_epoch_start(self, trainer, pl_module):
+        self.train_epoch_started_at = time.monotonic()
+        total = self._total_batches(trainer.num_training_batches)
+        self._print(
+            trainer,
+            f"[progress] train epoch {trainer.current_epoch + 1}/{trainer.max_epochs} started "
+            f"batches={total}",
+        )
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        total = self._total_batches(trainer.num_training_batches)
+        step = batch_idx + 1
+        if step == 1 or step == total or step % self.every_n_steps == 0:
+            self._print(
+                trainer,
+                f"[progress] train epoch {trainer.current_epoch + 1}/{trainer.max_epochs} "
+                f"batch {step}/{total} global_step={trainer.global_step} "
+                f"{self._format_loss(outputs)} "
+                f"{self._format_timing(getattr(self, 'train_epoch_started_at', None), step, total)}",
+            )
+
+    def on_validation_epoch_start(self, trainer, pl_module):
+        self.val_epoch_started_at = time.monotonic()
+        total = self._total_batches(trainer.num_val_batches)
+        phase = "sanity_val" if trainer.sanity_checking else "val"
+        self._print(
+            trainer,
+            f"[progress] {phase} epoch {trainer.current_epoch + 1}/{trainer.max_epochs} started "
+            f"batches={total}",
+        )
+
+    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
+        total = self._total_batches(trainer.num_val_batches)
+        step = batch_idx + 1
+        if step == 1 or step == total or step % self.every_n_steps == 0:
+            phase = "sanity_val" if trainer.sanity_checking else "val"
+            self._print(
+                trainer,
+                f"[progress] {phase} epoch {trainer.current_epoch + 1}/{trainer.max_epochs} "
+                f"batch {step}/{total} {self._format_loss(outputs)} "
+                f"{self._format_timing(getattr(self, 'val_epoch_started_at', None), step, total)}",
+            )
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        metrics = trainer.callback_metrics
+        loss = metrics.get("val/loss")
+        phase = "sanity_val" if trainer.sanity_checking else "val"
+        self._print(
+            trainer,
+            f"[progress] {phase} epoch {trainer.current_epoch + 1}/{trainer.max_epochs} ended "
+            f"{self._format_loss(loss)}",
+        )
+
 
 def train_model(args):
     """
@@ -80,7 +184,9 @@ def train_model(args):
     monitor = "val/loss" if not args.no_evaluate else "train/loss"
     model_callback = pl.pytorch.callbacks.ModelCheckpoint(monitor=monitor, 
                                                         filename=f"{args.data_set}-{{epoch:02d}}-{{step}}",
-                                                        train_time_interval=timedelta(minutes=args.save_freq))
+                                                        train_time_interval=timedelta(minutes=args.save_freq),
+                                                        save_last=True)
+    progress_callback = TrainingProgressLogger(every_n_steps=args.progress_log_every)
     trainer = pl.Trainer(
         max_epochs=args.epochs,
         accelerator=DEVICE,
@@ -89,7 +195,9 @@ def train_model(args):
         #precision="bf16" if DEVICE == "gpu" else 32,
         #auto_select_gpus=multigpu,
         devices="auto",#4 if args.multigpu else 1,
-        callbacks=[model_callback],
+        callbacks=[model_callback, progress_callback],
+        enable_progress_bar=False,
+        log_every_n_steps=1,
         
         #profiler=profiler,
     )
@@ -124,6 +232,7 @@ def main():
     parser.add_argument('--multigpu', action='store_true', help='Enable multi-GPU training')
     parser.add_argument("--save_freq", type=int, default=30, help="Frequency of saving the model in minutes.")
     parser.add_argument('--num_workers', type=int, help="Number workers (GPU Training only).")
+    parser.add_argument('--progress_log_every', type=int, default=1, help="Print progress every N train/val batches.")
     parser.add_argument('--no_ot', action='store_true', help='Disable optimal transport')
 
     args = parser.parse_args()

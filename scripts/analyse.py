@@ -81,6 +81,7 @@ def analyze(args):
 def main():
     parser = argparse.ArgumentParser(description="TITO reference trajectory analysis script.")
     parser.add_argument('--data_set', type=str, default="mdqm9", required=False, help="Dataset options: [ala2, mdqm9, timewarp]")
+    parser.add_argument("--data_path", type=str, required=True, help="Path to dataset directory.")
     parser.add_argument("--sub_data_set", type=str, default="huge", required=False, help="Sub-dataset options for timewarp [large, huge].")
     parser.add_argument("--custom_system_initial_condition", type=str, default=None, help="Path to custom test system for sampling. Loads initial condition from this file. If set, uses initial_condition_index to select state if multiple. Uses dataset normalization and scaling.")
     parser.add_argument('--split', type=str, default="test", required=False, help="[train, val, test]")
