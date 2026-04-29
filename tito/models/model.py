@@ -104,5 +104,6 @@ class SampleHandler:
         self.sample_forward = sample_forward
 
     def __call__(self, t, batch):
-        t = t.repeat((len(torch.unique(batch['cond'].batch)), ))
+        num_graphs = batch["cond"].num_graphs
+        t = t.reshape(1).expand(num_graphs)
         return self.sample_forward(t, batch)

@@ -13,7 +13,7 @@ python scripts/train.py --dataset <mdqm9 or timewarp> --data_path <path to datas
 ```
 
 ## Installation
-For the environment installation, first create an environment with python 3.11:
+For the environment installation on GPUs supported by PyTorch 2.5/cu121, first create an environment with python 3.11:
  ```
 mamba create -n tito python=3.11
   ```
@@ -25,6 +25,14 @@ Then run:
   uv pip install torch_scatter torch_sparse torch_cluster -f https://data.pyg.org/whl/torch-2.5.0+cu121.html
   uv pip install lightning torch_geometric
 ```
+
+For Blackwell/sm_100 GPUs, do not use the PyTorch 2.5/cu121 commands above. Install a PyTorch build that supports the GPU, then install PyG extension wheels from the matching PyG wheel index. For example, with PyTorch 2.7 and CUDA 12.8:
+```
+pip install --force-reinstall --no-cache-dir pyg_lib torch_scatter torch_sparse torch_cluster -f https://data.pyg.org/whl/torch-2.7.0+cu128.html
+pip install torch_geometric lightning
+python scripts/check_env.py
+```
+If you use NVIDIA containers, prefer the NVIDIA PyG container for your driver/CUDA stack instead of a plain `nvcr.io/nvidia/pytorch` container. The plain PyTorch container can still be missing `torch_scatter`, `torch_sparse`, or `torch_cluster`.
 
 ## Dataset pre-processing
 ### Small molecules
@@ -47,4 +55,3 @@ This repository contains code to reproduce the results from:
   copyright = {Creative Commons Attribution 4.0 International}
 }
 ```
-

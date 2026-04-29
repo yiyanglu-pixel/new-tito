@@ -1,4 +1,5 @@
 import argparse
+import torch
 import tito.models.model as model
 
 from tito.data.datasets import PDBDataset
@@ -63,6 +64,7 @@ if __name__ == "__main__":
     parser.add_argument("--i_job", type=int, default=None, help="Job index for parallel sampling, used to distinguish output files.") #consider changing default to 0 in final version
     parser.add_argument("--re_initial_condition", action="store_true", help="If set, use initial conditions from Replica Exchange simulations.")
     parser.add_argument('--base_density_std', type=float, default=1.0, help="standard deviation of the base distribution for sampling. Used for Flory exponent extrapolation experiments.") 
+    parser.add_argument("--device", type=str, default="auto", help="Device for inference. Use 'auto', 'cuda', 'cuda:0', or 'cpu'.")
     args = parser.parse_args()
     args.fixed_lag = True
     args.mode = "sample"  # Set mode to sample for compatibility with dataset loading function
@@ -79,7 +81,11 @@ if __name__ == "__main__":
     else:
         dataset = get_dataset(args)
     cfm = model.CFM.load_from_checkpoint(checkpoint_path=args.model_path)
-    print("Model loaded ...", flush=True)
+    device = "cuda" if args.device == "auto" and torch.cuda.is_available() else args.device
+    if device == "auto":
+        device = "cpu"
+    cfm = cfm.to(device)
+    print(f"Model loaded on {device} ...", flush=True)
     for i_mol in args.mol_indices:
         out_batch = sample_model(args=args, cfm=cfm, dataset=dataset, i_mol=i_mol)
         save_results(batch=out_batch, dataset=dataset, args=args, i_mol=i_mol, i_job=args.i_job)

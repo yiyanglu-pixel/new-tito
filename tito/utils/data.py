@@ -140,9 +140,8 @@ def get_save_path(args, i_mol, i_job=None):
 def save_results(batch, dataset, args, i_mol, i_job=None): 
     pkl_path, pdb_path  = get_save_path(args, i_mol, i_job)
     
-    #init_conf = batch["cond"].x.reshape(len(torch.unique(batch["cond"].batch)), -1, 3).detach().cpu().numpy()[np.newaxis, ...]
-    #trajs = batch["traj"].x.reshape(args.nested_samples, len(torch.unique(batch["traj"].batch)), -1, 3).detach().cpu().numpy()
-    trajs = batch["traj"].x.reshape(args.nested_samples+1, len(torch.unique(batch["traj"].batch)), -1, 3).detach().cpu().numpy()
+    num_graphs = batch["traj"].num_graphs
+    trajs = batch["traj"].x.reshape(args.nested_samples+1, num_graphs, -1, 3).detach().cpu().numpy()
     #trajs = np.concatenate([init_conf, trajs], axis=0)
     trajs = np.swapaxes(trajs, 0, 1)
     if args.custom_system_initial_condition:
