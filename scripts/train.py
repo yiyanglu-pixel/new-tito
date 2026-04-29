@@ -67,7 +67,7 @@ def train_model(args):
         print(f"Loading model from checkpoint {args.from_checkpoint_id} ...")
         project = args.data_set + "-tito"
         ckpt = mlops.get_checkpoint(project, args.from_checkpoint_id, tag=args.checkpoint_tag)
-        cfm = model.CFM.load_from_checkpoint(checkpoint_path=ckpt)
+        cfm = model.CFM.load_from_checkpoint(checkpoint_path=ckpt, weights_only=False)
     else:
         print("Creating new model ...")
         vf = velocity.PainnCondVelocity(n_features=args.n_features, model_layers=args.n_model_layers, 

@@ -80,7 +80,7 @@ if __name__ == "__main__":
         dataset = PDBDataset(args.pdb_path, scaling_factor=SCALING_FACTOR)
     else:
         dataset = get_dataset(args)
-    cfm = model.CFM.load_from_checkpoint(checkpoint_path=args.model_path)
+    cfm = model.CFM.load_from_checkpoint(checkpoint_path=args.model_path, weights_only=False)
     device = "cuda" if args.device == "auto" and torch.cuda.is_available() else args.device
     if device == "auto":
         device = "cpu"
