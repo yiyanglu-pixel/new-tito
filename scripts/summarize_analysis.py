@@ -83,10 +83,12 @@ def summarize_molecule(args, mol_idx):
     tica = load_optional(mol_path / f"tica_projections_{suffix}.npy")
     dihedrals = load_optional(mol_path / f"dihedrals_{suffix}.npy")
 
+    gap = scalar_or_nan(vamp_gap)
     row = {
         "mol_idx": mol_idx,
         "complete": all(value is not None for value in [vamp_gap, pred_svs, ref_svs, tica, dihedrals]),
-        "vamp_gap": scalar_or_nan(vamp_gap),
+        "vamp_gap": gap,
+        "abs_vamp_gap": abs(gap) if np.isfinite(gap) else np.nan,
         "ref_sv1": scalar_or_nan(ref_svs),
         "pred_sv1": scalar_or_nan(pred_svs),
         "tica_shape": shape_string(tica),
@@ -110,13 +112,18 @@ def print_stats(rows):
     if gaps.size == 0:
         print("no finite vamp_gap values found")
         return
+    abs_gaps = np.abs(gaps)
     print(f"vamp_gap mean: {gaps.mean():.6g}")
     print(f"vamp_gap median: {np.median(gaps):.6g}")
     print(f"vamp_gap std: {gaps.std(ddof=0):.6g}")
     print(f"vamp_gap min: {gaps.min():.6g}")
     print(f"vamp_gap max: {gaps.max():.6g}")
-    print("best molecules:", ", ".join(str(row["mol_idx"]) for row in sorted(complete, key=lambda r: r["vamp_gap"])[:5]))
-    print("worst molecules:", ", ".join(str(row["mol_idx"]) for row in sorted(complete, key=lambda r: r["vamp_gap"], reverse=True)[:5]))
+    print(f"abs_vamp_gap mean: {abs_gaps.mean():.6g}")
+    print(f"abs_vamp_gap median: {np.median(abs_gaps):.6g}")
+    print("closest to zero:", ", ".join(str(row["mol_idx"]) for row in sorted(complete, key=lambda r: r["abs_vamp_gap"])[:5]))
+    print("largest positive gaps:", ", ".join(str(row["mol_idx"]) for row in sorted(complete, key=lambda r: r["vamp_gap"], reverse=True)[:5]))
+    print("largest negative gaps:", ", ".join(str(row["mol_idx"]) for row in sorted(complete, key=lambda r: r["vamp_gap"])[:5]))
+    print("largest absolute gaps:", ", ".join(str(row["mol_idx"]) for row in sorted(complete, key=lambda r: r["abs_vamp_gap"], reverse=True)[:5]))
 
 
 def main():
