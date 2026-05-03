@@ -54,7 +54,6 @@ def get_dataset(args):
 
 def get_base_dataset(args):
     datasets = {
-        "ala2": data.ala2.ALA2Base,
         "mdqm9": data.mdqm9.MDQM9Base,
         "timewarp": data.timewarp.TimewarpBase,
     }
@@ -62,7 +61,13 @@ def get_base_dataset(args):
         raise ValueError(f"Dataset {args.data_set} not supported. Choose from {list(datasets.keys())}.")
     dataset_class = datasets[args.data_set]
 
-    dataset = dataset_class(path=None, sub_data_set=args.sub_data_set, split=args.split, normalize=False, lazy_load=True) #inference
+    dataset = dataset_class(
+        path=getattr(args, "data_path", None),
+        sub_data_set=getattr(args, "sub_data_set", "version_0"),
+        split=args.split,
+        normalize=False,
+        lazy_load=True,
+    ) #inference
     return dataset
 
 def get_batch(args, dataset, i_mol):

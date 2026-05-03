@@ -1,6 +1,5 @@
 import tempfile
 import os
-import copy
 import warnings
 import os.path as osp
 import mdtraj as md
@@ -127,19 +126,21 @@ def check_and_get_paths(args):
     """
     Checks if the necessary directories exist, and creates them if they don't.
     """
-    mol_indices = copy.deepcopy(args.mol_indices)
+    available_paths = []
+    available_indices = []
     missing_indices = []
     paths = get_model_samples_paths(args)
 
     for i_mol, mol_paths in zip(args.mol_indices, paths):
-        for path in mol_paths:
-            if not osp.exists(path):
-                missing_indices.append(i_mol)
-                mol_indices.remove(i_mol)
+        if any(not osp.exists(path) for path in mol_paths):
+            missing_indices.append(i_mol)
+        else:
+            available_indices.append(i_mol)
+            available_paths.append(mol_paths)
     if len(missing_indices) > 0:
         warnings.warn(f"Missing sampled trajectories for molecules: {missing_indices}")
 
-    return paths, mol_indices, missing_indices
+    return available_paths, available_indices, missing_indices
 
 def compute_and_save_dihedrals_and_sinusoids(mol, trajs, mol_idx, args, mode="md"):
     """
@@ -207,7 +208,36 @@ def compute_and_save_ticas(sinusoids, mol_idx, args):
     return model, projections
 
 
+def _trajectory_lengths(data):
+    if isinstance(data, np.ndarray):
+        if data.ndim >= 3:
+            return [data.shape[1]] * data.shape[0]
+        if data.ndim >= 2:
+            return [data.shape[0]]
+        return [len(data)]
+    return [len(traj) for traj in data]
+
+
+def _validate_vamp_lag(ref_data, predict_data, args, lag_factor):
+    ref_lagtime = args.lag_vamp * lag_factor
+    pred_lagtime = args.lag_vamp
+    ref_min_len = min(_trajectory_lengths(ref_data))
+    pred_min_len = min(_trajectory_lengths(predict_data))
+    max_lag_vamp = min((ref_min_len - 1) // lag_factor, pred_min_len - 1)
+
+    if ref_lagtime >= ref_min_len or pred_lagtime >= pred_min_len:
+        raise ValueError(
+            f"lag_vamp={args.lag_vamp} is too large for molecule {mol_idx}. "
+            f"The reference VAMP lag is lag_vamp * lag_factor = {ref_lagtime} frames "
+            f"(lag_factor={lag_factor}), but the shortest reference trajectory has "
+            f"{ref_min_len} frames. The predicted VAMP lag is {pred_lagtime} frames, "
+            f"and the shortest predicted trajectory has {pred_min_len} frames. "
+            f"Use --lag_vamp <= {max_lag_vamp} for this molecule."
+        )
+
+
 def compute_and_save_vamp_singular_values_and_gaps(ref_data, predict_data, mol_idx, args, lag_factor=1): #n_singular_values=10
+    _validate_vamp_lag(ref_data, predict_data, args, lag_factor)
 
     vamp_model_ref = VAMP(lagtime=args.lag_vamp*lag_factor).fit(ref_data).fetch_model()
     vamp_model_pred = VAMP(lagtime=args.lag_vamp).fit(predict_data).fetch_model()

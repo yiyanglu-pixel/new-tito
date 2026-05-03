@@ -20,9 +20,11 @@ class MDQM9Base(LazyH5DatasetMixin):
     scaling_factor = SCALING_FACTOR
 
     def __init__(self, path, sub_data_set="version_0", sub_sampling_indices_path=None, split=None, normalize=True, lazy_load=False):
-        self.path = path
-        self.h5_path = path + "mdqm9-nc.hdf5"
-        self.sdf_file = path + "mdqm9-nc.sdf"
+        if path is None:
+            path = os.path.join("datasets", "mdqm9-nc")
+        self.path = os.path.join(path, "")
+        self.h5_path = os.path.join(self.path, "mdqm9-nc.hdf5")
+        self.sdf_file = os.path.join(self.path, "mdqm9-nc.sdf")
         self.split = split
         mol_suppl = Chem.SDMolSupplier(self.sdf_file, removeHs=False)
 
@@ -33,14 +35,14 @@ class MDQM9Base(LazyH5DatasetMixin):
             if sub_sampling_indices_path is not None:
                 split_path = sub_sampling_indices_path
             else:
-                split_path = self.path+f"splits/{split}_indices.npy"
+                split_path = os.path.join(self.path, "splits", f"{split}_indices.npy")
             molecule_idxs = np.load(split_path)
 
         elif split == "mini":
             molecule_idxs = [621, 684, 724]
 
         elif split in [str(i) for i in range(1, 10)]:
-            split_path = self.path+f"splits/{split}_ha.npy"
+            split_path = os.path.join(self.path, "splits", f"{split}_ha.npy")
             with open(split_path, "rb") as f:
                 molecule_idxs = np.load(f)
 

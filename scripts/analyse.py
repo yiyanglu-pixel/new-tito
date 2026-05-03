@@ -23,10 +23,10 @@ def analyze(args):
     paths, mol_indices, missing_indices = check_and_get_paths(args)
 
     print("Analyzing molecules...")
-    for i_mol in tqdm(mol_indices):
+    for i_mol, mol_paths in tqdm(list(zip(mol_indices, paths))):
         
         if args.custom_system_initial_condition:
-            mol = mlops.load(paths[0])["mol"]
+            mol = mlops.load(mol_paths[0])["mol"]
         else:
             mol = dataset.mol_suppl[i_mol]
         
@@ -48,8 +48,8 @@ def analyze(args):
             np.save(re_projections_path, tica_projections_re)
         if args.process_mdft_data:
             for mdft_ps in args.mdft_ps:
-                pre_path = paths[i_mol][0].rsplit("/", maxsplit=1)[0]
-                mdft_filename = f"{pre_path}ft_positions_{mdft_ps}_ps_random_init_lag_{int(args.lag)}_nested_{args.nested_samples}_ode_steps_{args.ode_steps}.npy.npy" #potentialy implement non-random conditions
+                pre_path = mol_paths[0].rsplit("/", maxsplit=1)[0]
+                mdft_filename = f"{pre_path}/ft_positions_{mdft_ps}_ps_random_init_lag_{int(args.lag)}_nested_{args.nested_samples}_ode_steps_{args.ode_steps}.npy.npy" #potentialy implement non-random conditions
                 mdft_data = np.load(mdft_filename)
                 dihedrals_mdft, sinusoids_mdft = compute_and_save_dihedrals_and_sinusoids(mol, mdft_data, mol_idx=i_mol, args=args, mode="mdft")
                 tica_projections_mdft = tica_models.transform(sinusoids_mdft)
@@ -58,7 +58,6 @@ def analyze(args):
 
         # Aggregate data from different jobs with same parameters
         model_trajs = []
-        mol_paths = paths[i_mol]
         for path in mol_paths:
             with open(path, "rb") as f:
                 model_trajs.append(pickle.load(f)["traj"])
@@ -74,7 +73,7 @@ def analyze(args):
             md_report_interval = 10 #ps
         else:
             md_report_interval = dataset.lags[i_mol]
-        lag_factor = int(args.lag / md_report_interval)
+        lag_factor = max(int(round(args.lag / md_report_interval)), 1)
         vamp_scores_ref, vamp_scores_pred, vamp_gap = compute_and_save_vamp_singular_values_and_gaps(sinusoids_md, sinusoids_tito, i_mol, args, lag_factor=lag_factor)
 
 
@@ -84,6 +83,7 @@ def main():
     parser.add_argument("--sub_data_set", type=str, default="huge", required=False, help="Sub-dataset options for timewarp [large, huge].")
     parser.add_argument("--custom_system_initial_condition", type=str, default=None, help="Path to custom test system for sampling. Loads initial condition from this file. If set, uses initial_condition_index to select state if multiple. Uses dataset normalization and scaling.")
     parser.add_argument('--split', type=str, default="test", required=False, help="[train, val, test]")
+    parser.add_argument("--data_path", type=str, default=None, required=False, help="Path to dataset directory.")
     parser.add_argument('--mol_indices', type=int, nargs='+', default=[0], help="Molecule indices to analyze. Default is [0].")
     parser.add_argument('--model', type=str, default=None, help="wandb model name.")
     parser.add_argument('--lag', type=float, default=1000., help="lag of sampled trajectories.")
@@ -91,7 +91,7 @@ def main():
     parser.add_argument('--initialization', type=str, default="random", help="initialization of samples.")
     parser.add_argument('--ode_steps', type=int, default=40, help="Number of ODE steps.")
     parser.add_argument('--lag_tica', type=int, default=1, help="lag in steps (md) for TICA computation.")
-    parser.add_argument('--lag_vamp', type=int, default=1, help="lag in steps (model) for VAMP computation.")
+    parser.add_argument('--lag_vamp', type=int, default=1, help="lag in model steps for VAMP. The reference MD lag is converted to lag_vamp * round(lag / md_report_interval).")
     parser.add_argument('--jobs', type=int, nargs='+', default=None, help="Indices of jobs to aggregate data from.")
     parser.add_argument('--process_replica_exchange_trajectory', action='store_true', help="If set, processes the replica exchange trajectory.")
     parser.add_argument('--process_mdft_data', action='store_true', help="If set, processes the MD fine-tuned data.")
