@@ -218,7 +218,7 @@ def _trajectory_lengths(data):
     return [len(traj) for traj in data]
 
 
-def _validate_vamp_lag(ref_data, predict_data, args, lag_factor):
+def _validate_vamp_lag(ref_data, predict_data, mol_idx, args, lag_factor):
     ref_lagtime = args.lag_vamp * lag_factor
     pred_lagtime = args.lag_vamp
     ref_min_len = min(_trajectory_lengths(ref_data))
@@ -237,7 +237,7 @@ def _validate_vamp_lag(ref_data, predict_data, args, lag_factor):
 
 
 def compute_and_save_vamp_singular_values_and_gaps(ref_data, predict_data, mol_idx, args, lag_factor=1): #n_singular_values=10
-    _validate_vamp_lag(ref_data, predict_data, args, lag_factor)
+    _validate_vamp_lag(ref_data, predict_data, mol_idx, args, lag_factor)
 
     vamp_model_ref = VAMP(lagtime=args.lag_vamp*lag_factor).fit(ref_data).fetch_model()
     vamp_model_pred = VAMP(lagtime=args.lag_vamp).fit(predict_data).fetch_model()
@@ -263,6 +263,8 @@ def compute_and_save_vamp_singular_values_and_gaps(ref_data, predict_data, mol_i
         else:
             vamp_svs_pred_path = f"results/{args.data_set}/{args.sub_data_set}/{args.model}/{args.split}/mol_{str(mol_idx).zfill(5)}/vamp_singular_values_init_{str(int(args.initialization)).zfill(6)}_lag_{int(args.lag)}_nested_{args.nested_samples}_ode_steps_{args.ode_steps}.npy"
 
+    vamp_svs_ref_path = _with_vamp_lag(vamp_svs_ref_path, args)
+    vamp_svs_pred_path = _with_vamp_lag(vamp_svs_pred_path, args)
     np.save(vamp_svs_ref_path, vamp_svs_ref)
     np.save(vamp_svs_pred_path, vamp_svs_pred)
     #print(f"VAMP singular values saved to {vamp_svs_ref_path} and {vamp_svs_pred_path}")
@@ -278,10 +280,16 @@ def compute_and_save_vamp_singular_values_and_gaps(ref_data, predict_data, mol_i
             vamp_gap_path = f"results/{args.data_set}/{args.sub_data_set}/{args.model}/{args.split}/mol_{str(mol_idx).zfill(5)}/vamp_gap_random_init_lag_{int(args.lag)}_nested_{args.nested_samples}_ode_steps_{args.ode_steps}.npy"
         else:
             vamp_gap_path = f"results/{args.data_set}/{args.sub_data_set}/{args.model}/{args.split}/mol_{str(mol_idx).zfill(5)}/vamp_gap_init_{str(int(args.initialization)).zfill(6)}_lag_{int(args.lag)}_nested_{args.nested_samples}_ode_steps_{args.ode_steps}.npy"
+    vamp_gap_path = _with_vamp_lag(vamp_gap_path, args)
     np.save(vamp_gap_path, vamp_gap)
     #print(f"VAMP gap saved to {vamp_gap_path}")
 
     return vamp_svs_ref, vamp_svs_pred, vamp_gap
+
+
+def _with_vamp_lag(path, args):
+    stem, ext = os.path.splitext(path)
+    return f"{stem}_vamp_lag_{args.lag_vamp}{ext}"
 
 
 def update_histogram(current_histogram, new_data, bins):
